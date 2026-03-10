@@ -100,11 +100,11 @@ def score_from_distance(distance: float) -> float:
 # Server state (initialized once at startup)
 # ---------------------------------------------------------------------------
 
-_openai_client: OpenAI | None = None
-_chroma_client: chromadb.PersistentClient | None = None
+_openai_client = None
+_chroma_client = None
 
 
-def get_collection(name: str) -> chromadb.Collection | None:
+def get_collection(name: str):
     try:
         return _chroma_client.get_collection(name)
     except Exception:
