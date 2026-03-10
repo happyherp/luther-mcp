@@ -78,8 +78,13 @@ def main():
         sys.exit(1)
 
     print(f"\nExtracting to {dest.parent.resolve()} ...")
-    with tarfile.open(archive, "r:gz") as tar:
-        tar.extractall(dest.parent)
+    try:
+        with tarfile.open(archive, "r:gz") as tar:
+            tar.extractall(dest.parent)
+    except Exception as e:
+        print(f"Extraction failed: {e}", file=sys.stderr)
+        archive.unlink()
+        sys.exit(1)
 
     archive.unlink()
     print(f"Done. ChromaDB is at: {dest.resolve()}")

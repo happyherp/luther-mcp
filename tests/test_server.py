@@ -1,7 +1,7 @@
 """
 test_server.py — Unit tests for luther_mcp.server
 
-Mocks OpenAI and ChromaDB. No external calls needed.
+Mocks sentence-transformers model and ChromaDB. No external calls needed.
 
 Run with:
     python -m pytest tests/ -v
@@ -51,24 +51,22 @@ def _john_316_meta(translation="GerBoLut"):
 
 @pytest.fixture(autouse=True)
 def patch_globals():
-    """Inject mock OpenAI and ChromaDB clients into the server module."""
+    """Inject mock sentence-transformers model and ChromaDB client into the server module."""
     import luther_mcp.server as srv
 
-    mock_openai = MagicMock()
-    mock_openai.embeddings.create.return_value = MagicMock(
-        data=[MagicMock(embedding=[0.1] * 1536)]
-    )
+    mock_model = MagicMock()
+    mock_model.encode.return_value = MagicMock(tolist=lambda: [0.1] * 384)
 
     mock_chroma = MagicMock()
 
-    original_openai = srv._openai_client
+    original_model = srv._model
     original_chroma = srv._chroma_client
-    srv._openai_client = mock_openai
+    srv._model = mock_model
     srv._chroma_client = mock_chroma
 
-    yield mock_openai, mock_chroma
+    yield mock_model, mock_chroma
 
-    srv._openai_client = original_openai
+    srv._model = original_model
     srv._chroma_client = original_chroma
 
 
@@ -186,12 +184,15 @@ class TestSearchBible:
         call_kwargs = col.query.call_args[1]
         assert "where" not in call_kwargs
 
-    def test_openai_called_once(self, patch_globals):
+    def test_model_encode_called(self, patch_globals):
         from luther_mcp.server import tool_search_bible
-        mock_openai, mock_chroma = patch_globals
+        mock_model, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         tool_search_bible("something")
-        mock_openai.embeddings.create.assert_called_once()
+        mock_model.encode.assert_called_once()
+        # E5 convention: query prefix
+        call_args = mock_model.encode.call_args[0][0]
+        assert call_args.startswith("query: ")
 
     def test_missing_collection_returns_empty(self, patch_globals):
         from luther_mcp.server import tool_search_bible

@@ -1,11 +1,13 @@
 """
 server.py — MCP server exposing semantic Bible search.
 
-Communicates over stdio (as required by Claude Desktop).
+Runs in two modes:
+  stdio (default)  — for Claude Desktop local use
+  SSE              — for remote/hosted use (pass --sse or set PORT env var)
 
 Environment variables:
-    OPENAI_API_KEY   Required
-    CHROMA_PATH      Path to ChromaDB built by the indexer
+    CHROMA_PATH      Path to ChromaDB built by the indexer (default: ./bible_chroma_db)
+    PORT             If set, enables SSE mode on this port (HuggingFace Spaces uses 7860)
 """
 
 import os
@@ -17,9 +19,10 @@ import chromadb
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
-from openai import OpenAI
 
 from .constants import _BOOK_LOOKUP, ALL_TRANSLATIONS, TRANSLATION_META
+
+MODEL_NAME = "intfloat/multilingual-e5-small"
 
 
 def resolve_book_number(book: str) -> int | None:
@@ -32,18 +35,24 @@ def score_from_distance(distance: float) -> float:
     return round(max(0.0, 1.0 - distance), 4)
 
 
+def _extract_text(doc: str) -> str:
+    """Extract verse text from a stored document string ('Ref — text' format)."""
+    return doc.split(" — ", 1)[-1] if " — " in doc else doc
+
+
 # ---------------------------------------------------------------------------
 # Server state (initialized once at startup)
 # ---------------------------------------------------------------------------
 
-_openai_client = None
+_model = None        # SentenceTransformer
 _chroma_client = None
 
 
 def get_collection(name: str):
     try:
         return _chroma_client.get_collection(name)
-    except Exception:
+    except Exception as e:
+        print(f"Warning: collection '{name}' unavailable: {e}", file=sys.stderr)
         return None
 
 
@@ -57,11 +66,8 @@ def tool_search_bible(
     n_results: int = 10,
     testament: str | None = None,
 ) -> list[dict]:
-    embedding_response = _openai_client.embeddings.create(
-        model="text-embedding-3-small",
-        input=[query],
-    )
-    query_embedding = embedding_response.data[0].embedding
+    # E5 models use "query: " prefix for queries
+    query_embedding = _model.encode(f"query: {query}", normalize_embeddings=True).tolist()
 
     where_filter = {"testament": testament} if testament in ("OT", "NT") else None
 
@@ -81,7 +87,8 @@ def tool_search_bible(
             kwargs["where"] = where_filter
         try:
             results = col.query(**kwargs)
-        except Exception:
+        except Exception as e:
+            print(f"Warning: query failed for '{tname}': {e}", file=sys.stderr)
             continue
 
         for doc, meta, dist in zip(
@@ -92,7 +99,7 @@ def tool_search_bible(
             raw_results.append({
                 "reference": f"{meta['book']} {meta['chapter']}:{meta['verse']}",
                 "reference_en": f"{meta['book_en']} {meta['chapter']}:{meta['verse']}",
-                "text": meta.get("text", doc.split(" — ", 1)[-1]),
+                "text": _extract_text(doc),
                 "translation": meta["translation"],
                 "score": score_from_distance(dist),
                 "_canon_key": f"{meta['book_number']}_{meta['chapter']}_{meta['verse']}",
@@ -135,17 +142,17 @@ def tool_get_verse(
         doc_id = f"{tname}_{book_number}_{chapter}_{verse}"
         try:
             res = col.get(ids=[doc_id], include=["documents", "metadatas"])
-        except Exception:
+        except Exception as e:
+            print(f"Warning: get failed for '{tname}': {e}", file=sys.stderr)
             continue
         if not res["ids"]:
             continue
         meta = res["metadatas"][0]
         doc = res["documents"][0]
-        text = doc.split(" — ", 1)[-1] if " — " in doc else doc
         results.append({
             "reference": f"{meta['book']} {chapter}:{verse}",
             "reference_en": f"{meta['book_en']} {chapter}:{verse}",
-            "text": text,
+            "text": _extract_text(doc),
             "translation": tname,
         })
 
@@ -284,25 +291,55 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 
 # ---------------------------------------------------------------------------
-# Entry point (called from __main__.py)
+# Entry points (called from __main__.py)
 # ---------------------------------------------------------------------------
 
-async def main():
-    global _openai_client, _chroma_client
+def _init_globals(chroma_path: str) -> None:
+    global _model, _chroma_client
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OPENAI_API_KEY not set.", file=sys.stderr)
-        sys.exit(1)
-
-    chroma_path = os.environ.get("CHROMA_PATH", "./bible_chroma_db")
     chroma_dir = Path(chroma_path)
     if not chroma_dir.exists():
-        print(f"Error: CHROMA_PATH '{chroma_dir}' does not exist. Run index_bible.py first.", file=sys.stderr)
+        print(f"Error: CHROMA_PATH '{chroma_dir}' does not exist. Run: python -m luther_mcp index", file=sys.stderr)
         sys.exit(1)
 
-    _openai_client = OpenAI(api_key=api_key)
+    print(f"Loading embedding model '{MODEL_NAME}' ...", file=sys.stderr)
+    from sentence_transformers import SentenceTransformer
+    _model = SentenceTransformer(MODEL_NAME)
+
     _chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+
+
+async def main():
+    """stdio transport — for local Claude Desktop use."""
+    chroma_path = os.environ.get("CHROMA_PATH", "./bible_chroma_db")
+    _init_globals(chroma_path)
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
+
+
+async def main_sse(port: int = 7860):
+    """SSE transport — for remote/hosted use (HuggingFace Spaces etc.)."""
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.applications import Starlette
+    from starlette.routing import Mount, Route
+
+    chroma_path = os.environ.get("CHROMA_PATH", "./bible_chroma_db")
+    _init_globals(chroma_path)
+
+    sse = SseServerTransport("/messages/")
+
+    async def handle_sse(request):
+        from starlette.responses import Response
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await server.run(streams[0], streams[1], server.create_initialization_options())
+        return Response()
+
+    app = Starlette(routes=[
+        Route("/sse", handle_sse, methods=["GET"]),
+        Mount("/messages/", app=sse.handle_post_message),
+    ])
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+    await uvicorn.Server(config).serve()

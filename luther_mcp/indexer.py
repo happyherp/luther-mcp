@@ -5,7 +5,6 @@ Usage:
     python -m luther_mcp index [--force]
 
 Environment variables:
-    OPENAI_API_KEY   Required
     BIBLE_DB_PATH    Path to scrollmapper formats/sqlite/ directory
                      (default: ../bible_databases/formats/sqlite relative to package root)
     CHROMA_PATH      Where to store ChromaDB (default: ./bible_chroma_db)
@@ -18,11 +17,12 @@ import sys
 from pathlib import Path
 
 import chromadb
-from openai import OpenAI
+from sentence_transformers import SentenceTransformer
 
 from .constants import BOOK_NAMES_DE, BOOK_NAMES_EN, TRANSLATIONS
 
-BATCH_SIZE = 2048
+BATCH_SIZE = 512
+MODEL_NAME = "intfloat/multilingual-e5-small"
 
 
 def get_testament(book_number: int) -> str:
@@ -56,20 +56,12 @@ def build_document(book_name: str, chapter: int, verse: int, text: str) -> str:
     return f"{book_name} {chapter}:{verse} — {text}"
 
 
-def embed_batch(client: OpenAI, texts: list[str]) -> list[list[float]]:
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=texts,
-    )
-    return [item.embedding for item in response.data]
-
-
 def index_translation(
     collection_name: str,
     db_path: Path,
     use_german_names: bool,
     chroma_client: chromadb.PersistentClient,
-    openai_client: OpenAI,
+    model: SentenceTransformer,
     force: bool,
 ) -> None:
     existing = [c.name for c in chroma_client.list_collections()]
@@ -122,7 +114,9 @@ def index_translation(
                 "testament": get_testament(b),
             })
 
-        embeddings = embed_batch(openai_client, documents)
+        # E5 models use "passage: " prefix for documents at index time
+        passages = [f"passage: {doc}" for doc in documents]
+        embeddings = model.encode(passages, batch_size=BATCH_SIZE, normalize_embeddings=True).tolist()
         collection.add(ids=ids, documents=documents, metadatas=metadatas, embeddings=embeddings)
 
         done = min(batch_start + BATCH_SIZE, total)
@@ -135,11 +129,6 @@ def main():
     parser = argparse.ArgumentParser(description="Index Bible translations into ChromaDB.")
     parser.add_argument("--force", action="store_true", help="Re-index even if collection already exists.")
     args = parser.parse_args()
-
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
-        sys.exit(1)
 
     # Default: ../bible_databases/formats/sqlite relative to the package root
     package_root = Path(__file__).parent.parent
@@ -154,7 +143,9 @@ def main():
     chroma_dir = Path(chroma_path)
     chroma_dir.mkdir(parents=True, exist_ok=True)
 
-    openai_client = OpenAI(api_key=api_key)
+    print(f"Loading embedding model '{MODEL_NAME}' ...")
+    model = SentenceTransformer(MODEL_NAME)
+
     chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
 
     for collection_name, sqlite_filename, use_german_names in TRANSLATIONS:
@@ -164,7 +155,7 @@ def main():
             db_path=db_path,
             use_german_names=use_german_names,
             chroma_client=chroma_client,
-            openai_client=openai_client,
+            model=model,
             force=args.force,
         )
 
