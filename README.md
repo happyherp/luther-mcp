@@ -75,12 +75,15 @@ Edit `claude_desktop_config.json` (at `%APPDATA%\Claude\claude_desktop_config.js
       "cwd": "C:\\Projects\\luther-mcp",
       "env": {
         "OPENAI_API_KEY": "your-key-here",
-        "CHROMA_PATH": "C:\\Projects\\luther-mcp\\bible_chroma_db"
+        "CHROMA_PATH": "C:\\Projects\\luther-mcp\\bible_chroma_db",
+        "PYTHONPATH": "C:\\Projects\\luther-mcp"
       }
     }
   }
 }
 ```
+
+`PYTHONPATH` is required — Claude Desktop does not add `cwd` to Python's module search path automatically, so without it Python can't find the `luther_mcp` package.
 
 Restart Claude Desktop. The server appears under the MCP tools panel.
 
@@ -138,6 +141,39 @@ Returns available translations with language, description, and verse count.
 ```bash
 python -m pytest tests/ -v
 ```
+
+---
+
+## Publishing a release (maintainers)
+
+New users can skip re-indexing by downloading the pre-built ChromaDB via
+`python -m luther_mcp download`. To publish that artifact to GitHub Releases:
+
+### 1. Create a GitHub Personal Access Token
+
+Go to **https://github.com/settings/tokens/new** and create a token with
+**Contents** scope (read + write). Copy it.
+
+### 2. Run the release script
+
+```bash
+set GITHUB_TOKEN=ghp_your_token_here
+python scripts/create_release.py
+```
+
+The script will:
+1. Compress `bible_chroma_db/` → `bible_chroma_db.tar.gz` (~700 MB)
+2. Create a GitHub release tagged `v0.2.0`
+3. Upload the archive as a release asset
+4. Delete the local archive when done
+
+The upload takes a few minutes. It uses the GitHub API directly — no browser
+required, no size issues.
+
+### 3. Update the version tag (when releasing a new version)
+
+Edit `RELEASE_URL` in `luther_mcp/downloader.py` and `VERSION` in
+`scripts/create_release.py` to match the new tag.
 
 ---
 
