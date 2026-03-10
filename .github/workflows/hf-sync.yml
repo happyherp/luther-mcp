@@ -17,4 +17,4 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git remote add hf https://AIFreund:${HF_TOKEN}@huggingface.co/spaces/AIFreund/luther-bible
-          git subtree push --prefix hf_space hf main
+          git push hf $(git subtree split --prefix hf_space HEAD):main --force
