@@ -12,9 +12,9 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Push hf_space/ subtree to HF Space
+      - name: Push to HF Space
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git remote add hf https://AIFreund:${HF_TOKEN}@huggingface.co/spaces/AIFreund/luther-bible
-          git push hf $(git subtree split --prefix hf_space HEAD):main --force
+          git push hf main --force

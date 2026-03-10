@@ -1,3 +1,13 @@
+---
+title: Luther Bible MCP
+emoji: 📖
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Luther Bible MCP Server
 
 A semantic search MCP server for the German Luther Bible (1545, modern spelling), with King James Version and New Heart English Bible included. Backed by `intfloat/multilingual-e5-small` embeddings and ChromaDB. Plugs directly into Claude Desktop.
