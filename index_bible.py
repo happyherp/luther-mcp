@@ -6,7 +6,8 @@ Usage:
 
 Environment variables:
     OPENAI_API_KEY   Required
-    BIBLE_DB_PATH    Path to scrollmapper sqlite/ directory
+    BIBLE_DB_PATH    Path to scrollmapper formats/sqlite/ directory
+                     (default: ../bible_databases/formats/sqlite relative to this script)
     CHROMA_PATH      Where to store ChromaDB (default: ./bible_chroma_db)
 """
 
@@ -61,11 +62,13 @@ BOOK_NAMES_DE = [
     "Judas", "Offenbarung",
 ]
 
-# Translations to index: (collection_name, sqlite_filename, use_german_names)
+# Translations to index: (collection_name, db_filename, use_german_names)
+# Files live under formats/sqlite/ in the scrollmapper/bible_databases repo.
+# "web" collection uses NHEB.db (New Heart English Bible, based on World English Bible).
 TRANSLATIONS = [
-    ("GerBoLut", "GerBoLut.sqlite", True),
-    ("KJV",      "KJV.sqlite",      False),
-    ("web",      "web.sqlite",      False),
+    ("GerBoLut", "GerBoLut.db", True),
+    ("KJV",      "KJV.db",      False),
+    ("web",      "NHEB.db",     False),
 ]
 
 BATCH_SIZE = 2048
@@ -75,14 +78,28 @@ def get_testament(book_number: int) -> str:
     return "OT" if book_number <= 39 else "NT"
 
 
-def load_verses(db_path: Path) -> list[dict]:
-    """Load all verses from a Bible SQLite file."""
+def load_verses(db_path: Path, collection_name: str) -> list[dict]:
+    """Load all verses from a Bible SQLite file.
+
+    The scrollmapper repo uses translation-specific table names, e.g.:
+      GerBoLut_verses (book_id, chapter, verse, text)
+    The 'web' collection maps to NHEB.db, so its table is NHEB_verses.
+    """
+    # Map collection name -> actual table prefix in the .db file
+    TABLE_PREFIX = {
+        "GerBoLut": "GerBoLut",
+        "KJV": "KJV",
+        "web": "NHEB",  # NHEB.db is used for the 'web' collection
+    }
+    prefix = TABLE_PREFIX.get(collection_name, collection_name)
+    table = f"{prefix}_verses"
+
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.execute("SELECT b, c, v, t FROM t ORDER BY b, c, v")
+    cur.execute(f"SELECT book_id, chapter, verse, text FROM {table} ORDER BY book_id, chapter, verse")
     rows = cur.fetchall()
     conn.close()
-    return [{"b": r[0], "c": r[1], "v": r[2], "t": r[3]} for r in rows]
+    return [{"b": r[0], "c": r[1], "v": r[2], "t": r[3].strip()} for r in rows]
 
 
 def build_document(book_name: str, chapter: int, verse: int, text: str) -> str:
@@ -124,7 +141,7 @@ def index_translation(
         metadata={"hnsw:space": "cosine"},
     )
 
-    verses = load_verses(db_path)
+    verses = load_verses(db_path, collection_name)
     total = len(verses)
     print(f"[{collection_name}] {total} verses loaded. Starting embedding...")
 
@@ -176,10 +193,10 @@ def main():
         print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
         sys.exit(1)
 
-    bible_db_path = os.environ.get("BIBLE_DB_PATH")
-    if not bible_db_path:
-        print("Error: BIBLE_DB_PATH environment variable not set.", file=sys.stderr)
-        sys.exit(1)
+    bible_db_path = os.environ.get(
+        "BIBLE_DB_PATH",
+        str(Path(__file__).parent.parent / "bible_databases" / "formats" / "sqlite"),
+    )
 
     chroma_path = os.environ.get("CHROMA_PATH", "./bible_chroma_db")
 

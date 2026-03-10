@@ -79,7 +79,7 @@ TRANSLATION_META = {
     },
     "web": {
         "language": "English",
-        "description": "World English Bible",
+        "description": "New Heart English Bible (based on World English Bible)",
     },
 }
 
