@@ -1,3 +1,4 @@
 chromadb
 openai
 mcp[cli]
+pytest
