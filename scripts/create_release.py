@@ -101,7 +101,7 @@ def get_or_create_release(token: str) -> tuple[int, str]:
             "name": f"{VERSION} — pre-built ChromaDB",
             "body": (
                 "Pre-built ChromaDB vector index for all three translations "
-                "(GerBoLut, KJV, NHEB). ~93,000 verses, OpenAI text-embedding-3-small.\n\n"
+                "(GerBoLut, KJV, NHEB). ~93,000 verses, intfloat/multilingual-e5-small embeddings.\n\n"
                 "Download automatically with:\n"
                 "```\npython -m luther_mcp download\n```"
             ),
