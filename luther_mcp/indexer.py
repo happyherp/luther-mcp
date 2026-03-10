@@ -1,13 +1,13 @@
 """
-index_bible.py — Build ChromaDB vector index from Bible SQLite files.
+indexer.py — Build ChromaDB vector index from Bible SQLite files.
 
 Usage:
-    python index_bible.py [--force]
+    python -m luther_mcp index [--force]
 
 Environment variables:
     OPENAI_API_KEY   Required
     BIBLE_DB_PATH    Path to scrollmapper formats/sqlite/ directory
-                     (default: ../bible_databases/formats/sqlite relative to this script)
+                     (default: ../bible_databases/formats/sqlite relative to package root)
     CHROMA_PATH      Where to store ChromaDB (default: ./bible_chroma_db)
 """
 
@@ -20,56 +20,7 @@ from pathlib import Path
 import chromadb
 from openai import OpenAI
 
-# ---------------------------------------------------------------------------
-# Book name mapping
-# ---------------------------------------------------------------------------
-
-BOOK_NAMES_EN = [
-    "", # 1-indexed
-    "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy",
-    "Joshua", "Judges", "Ruth", "1 Samuel", "2 Samuel",
-    "1 Kings", "2 Kings", "1 Chronicles", "2 Chronicles", "Ezra",
-    "Nehemiah", "Esther", "Job", "Psalms", "Proverbs",
-    "Ecclesiastes", "Song of Solomon", "Isaiah", "Jeremiah", "Lamentations",
-    "Ezekiel", "Daniel", "Hosea", "Joel", "Amos",
-    "Obadiah", "Jonah", "Micah", "Nahum", "Habakkuk",
-    "Zephaniah", "Haggai", "Zechariah", "Malachi",
-    # NT
-    "Matthew", "Mark", "Luke", "John", "Acts",
-    "Romans", "1 Corinthians", "2 Corinthians", "Galatians", "Ephesians",
-    "Philippians", "Colossians", "1 Thessalonians", "2 Thessalonians", "1 Timothy",
-    "2 Timothy", "Titus", "Philemon", "Hebrews", "James",
-    "1 Peter", "2 Peter", "1 John", "2 John", "3 John",
-    "Jude", "Revelation",
-]
-
-BOOK_NAMES_DE = [
-    "", # 1-indexed
-    "1. Mose", "2. Mose", "3. Mose", "4. Mose", "5. Mose",
-    "Josua", "Richter", "Ruth", "1. Samuel", "2. Samuel",
-    "1. Könige", "2. Könige", "1. Chronik", "2. Chronik", "Esra",
-    "Nehemia", "Esther", "Hiob", "Psalmen", "Sprüche",
-    "Prediger", "Hoheslied", "Jesaja", "Jeremia", "Klagelieder",
-    "Hesekiel", "Daniel", "Hosea", "Joel", "Amos",
-    "Obadja", "Jona", "Micha", "Nahum", "Habakuk",
-    "Zefanja", "Haggai", "Sacharja", "Maleachi",
-    # NT
-    "Matthäus", "Markus", "Lukas", "Johannes", "Apostelgeschichte",
-    "Römer", "1. Korinther", "2. Korinther", "Galater", "Epheser",
-    "Philipper", "Kolosser", "1. Thessalonicher", "2. Thessalonicher", "1. Timotheus",
-    "2. Timotheus", "Titus", "Philemon", "Hebräer", "Jakobus",
-    "1. Petrus", "2. Petrus", "1. Johannes", "2. Johannes", "3. Johannes",
-    "Judas", "Offenbarung",
-]
-
-# Translations to index: (collection_name, db_filename, use_german_names)
-# Files live under formats/sqlite/ in the scrollmapper/bible_databases repo.
-# "web" collection uses NHEB.db (New Heart English Bible, based on World English Bible).
-TRANSLATIONS = [
-    ("GerBoLut", "GerBoLut.db", True),
-    ("KJV",      "KJV.db",      False),
-    ("web",      "NHEB.db",     False),
-]
+from .constants import BOOK_NAMES_DE, BOOK_NAMES_EN, TRANSLATIONS
 
 BATCH_SIZE = 2048
 
@@ -85,11 +36,10 @@ def load_verses(db_path: Path, collection_name: str) -> list[dict]:
       GerBoLut_verses (book_id, chapter, verse, text)
     The 'web' collection maps to NHEB.db, so its table is NHEB_verses.
     """
-    # Map collection name -> actual table prefix in the .db file
     TABLE_PREFIX = {
         "GerBoLut": "GerBoLut",
         "KJV": "KJV",
-        "web": "NHEB",  # NHEB.db is used for the 'web' collection
+        "web": "NHEB",
     }
     prefix = TABLE_PREFIX.get(collection_name, collection_name)
     table = f"{prefix}_verses"
@@ -122,7 +72,6 @@ def index_translation(
     openai_client: OpenAI,
     force: bool,
 ) -> None:
-    # Check if already indexed
     existing = [c.name for c in chroma_client.list_collections()]
     if collection_name in existing:
         if force:
@@ -145,7 +94,6 @@ def index_translation(
     total = len(verses)
     print(f"[{collection_name}] {total} verses loaded. Starting embedding...")
 
-    # Process in batches
     for batch_start in range(0, total, BATCH_SIZE):
         batch = verses[batch_start : batch_start + BATCH_SIZE]
 
@@ -193,9 +141,11 @@ def main():
         print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
         sys.exit(1)
 
+    # Default: ../bible_databases/formats/sqlite relative to the package root
+    package_root = Path(__file__).parent.parent
     bible_db_path = os.environ.get(
         "BIBLE_DB_PATH",
-        str(Path(__file__).parent.parent / "bible_databases" / "formats" / "sqlite"),
+        str(package_root.parent / "bible_databases" / "formats" / "sqlite"),
     )
 
     chroma_path = os.environ.get("CHROMA_PATH", "./bible_chroma_db")
@@ -219,7 +169,3 @@ def main():
         )
 
     print("\nAll done. ChromaDB is at:", chroma_dir.resolve())
-
-
-if __name__ == "__main__":
-    main()

@@ -1,25 +1,22 @@
 """
-test_server.py — Unit tests for bible_mcp_server.py
+test_server.py — Unit tests for luther_mcp.server
 
-Mocks OpenAI and ChromaDB. Assumes the real ChromaDB index already exists
-at the default path (for integration-style smoke tests).
+Mocks OpenAI and ChromaDB. No external calls needed.
 
 Run with:
-    python -m pytest test_server.py -v
+    python -m pytest tests/ -v
 """
 
-import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
+
 
 # ---------------------------------------------------------------------------
 # Helpers to build mock ChromaDB query / get responses
 # ---------------------------------------------------------------------------
 
 def _query_response(docs, metadatas, distances):
-    """Build the dict chromadb collection.query() returns."""
     return {
         "documents": [docs],
         "metadatas": [metadatas],
@@ -28,7 +25,6 @@ def _query_response(docs, metadatas, distances):
 
 
 def _get_response(doc_id, doc, metadata):
-    """Build the dict chromadb collection.get() returns."""
     return {
         "ids": [doc_id],
         "documents": [doc],
@@ -56,7 +52,7 @@ def _john_316_meta(translation="GerBoLut"):
 @pytest.fixture(autouse=True)
 def patch_globals():
     """Inject mock OpenAI and ChromaDB clients into the server module."""
-    import bible_mcp_server as srv
+    import luther_mcp.server as srv
 
     mock_openai = MagicMock()
     mock_openai.embeddings.create.return_value = MagicMock(
@@ -82,33 +78,33 @@ def patch_globals():
 
 class TestResolveBookNumber:
     def test_english_name(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("John") == 43
 
     def test_german_name(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("Johannes") == 43
 
     def test_case_insensitive(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("JOHN") == resolve_book_number("john") == 43
 
     def test_genesis(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("Genesis") == 1
         assert resolve_book_number("1. Mose") == 1
 
     def test_revelation(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("Revelation") == 66
         assert resolve_book_number("Offenbarung") == 66
 
     def test_unknown_returns_none(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("Narnia") is None
 
     def test_whitespace_stripped(self):
-        from bible_mcp_server import resolve_book_number
+        from luther_mcp.server import resolve_book_number
         assert resolve_book_number("  John  ") == 43
 
 
@@ -118,19 +114,19 @@ class TestResolveBookNumber:
 
 class TestScoreFromDistance:
     def test_zero_distance_is_perfect(self):
-        from bible_mcp_server import score_from_distance
+        from luther_mcp.server import score_from_distance
         assert score_from_distance(0.0) == 1.0
 
     def test_distance_one_is_zero(self):
-        from bible_mcp_server import score_from_distance
+        from luther_mcp.server import score_from_distance
         assert score_from_distance(1.0) == 0.0
 
     def test_clamps_below_zero(self):
-        from bible_mcp_server import score_from_distance
+        from luther_mcp.server import score_from_distance
         assert score_from_distance(1.5) == 0.0
 
     def test_midpoint(self):
-        from bible_mcp_server import score_from_distance
+        from luther_mcp.server import score_from_distance
         assert score_from_distance(0.5) == 0.5
 
 
@@ -142,7 +138,7 @@ class TestSearchBible:
     def _make_collection(self, mock_chroma, translation="GerBoLut"):
         col = MagicMock()
         col.query.return_value = _query_response(
-            docs=[f"Johannes 3:16 — Denn also hat Gott die Welt geliebet..."],
+            docs=["Johannes 3:16 — Denn also hat Gott die Welt geliebet..."],
             metadatas=[_john_316_meta(translation)],
             distances=[0.15],
         )
@@ -150,7 +146,7 @@ class TestSearchBible:
         return col
 
     def test_returns_list(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         results = tool_search_bible("God loves the world")
@@ -158,7 +154,7 @@ class TestSearchBible:
         assert len(results) == 1
 
     def test_result_fields(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         result = tool_search_bible("God loves the world")[0]
@@ -168,14 +164,14 @@ class TestSearchBible:
         assert 0.0 <= result["score"] <= 1.0
 
     def test_no_internal_keys(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         result = tool_search_bible("love")[0]
         assert not any(k.startswith("_") for k in result)
 
     def test_testament_filter_applied(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
         col = self._make_collection(mock_chroma)
         tool_search_bible("love", testament="NT")
@@ -183,7 +179,7 @@ class TestSearchBible:
         assert call_kwargs.get("where") == {"testament": "NT"}
 
     def test_no_testament_filter_when_none(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
         col = self._make_collection(mock_chroma)
         tool_search_bible("love", testament=None)
@@ -191,14 +187,14 @@ class TestSearchBible:
         assert "where" not in call_kwargs
 
     def test_openai_called_once(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         mock_openai, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         tool_search_bible("something")
         mock_openai.embeddings.create.assert_called_once()
 
     def test_missing_collection_returns_empty(self, patch_globals):
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
         mock_chroma.get_collection.side_effect = Exception("not found")
         results = tool_search_bible("anything")
@@ -207,13 +203,13 @@ class TestSearchBible:
     def test_all_deduplicates(self, patch_globals):
         """When translation='all', same verse from multiple collections
         should appear only once (best score wins)."""
-        from bible_mcp_server import tool_search_bible
+        from luther_mcp.server import tool_search_bible
         _, mock_chroma = patch_globals
 
         def make_col(translation, distance):
             col = MagicMock()
             col.query.return_value = _query_response(
-                docs=[f"Johannes 3:16 — text"],
+                docs=["Johannes 3:16 — text"],
                 metadatas=[_john_316_meta(translation)],
                 distances=[distance],
             )
@@ -221,7 +217,7 @@ class TestSearchBible:
 
         cols = {
             "GerBoLut": make_col("GerBoLut", 0.2),
-            "KJV": make_col("KJV", 0.1),   # better score
+            "KJV": make_col("KJV", 0.1),
             "web": make_col("web", 0.3),
         }
         mock_chroma.get_collection.side_effect = lambda name: cols[name]
@@ -248,7 +244,7 @@ class TestGetVerse:
         return col
 
     def test_returns_dict_for_single_translation(self, patch_globals):
-        from bible_mcp_server import tool_get_verse
+        from luther_mcp.server import tool_get_verse
         _, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         result = tool_get_verse("John", 3, 16)
@@ -258,20 +254,20 @@ class TestGetVerse:
         assert "Gott" in result["text"]
 
     def test_german_book_name_resolves(self, patch_globals):
-        from bible_mcp_server import tool_get_verse
+        from luther_mcp.server import tool_get_verse
         _, mock_chroma = patch_globals
         self._make_collection(mock_chroma)
         result = tool_get_verse("Johannes", 3, 16)
         assert "error" not in result
 
     def test_unknown_book_returns_error(self, patch_globals):
-        from bible_mcp_server import tool_get_verse
+        from luther_mcp.server import tool_get_verse
         _, _ = patch_globals
         result = tool_get_verse("Narnia", 1, 1)
         assert "error" in result
 
     def test_missing_verse_returns_error(self, patch_globals):
-        from bible_mcp_server import tool_get_verse
+        from luther_mcp.server import tool_get_verse
         _, mock_chroma = patch_globals
         col = MagicMock()
         col.get.return_value = {"ids": [], "documents": [], "metadatas": []}
@@ -280,7 +276,7 @@ class TestGetVerse:
         assert "error" in result
 
     def test_all_returns_list(self, patch_globals):
-        from bible_mcp_server import tool_get_verse
+        from luther_mcp.server import tool_get_verse
         _, mock_chroma = patch_globals
 
         def make_col(translation):
@@ -301,8 +297,7 @@ class TestGetVerse:
         assert translations == {"GerBoLut", "KJV", "web"}
 
     def test_doc_id_format(self, patch_globals):
-        """get() must be called with id = {translation}_{book_number}_{chapter}_{verse}"""
-        from bible_mcp_server import tool_get_verse
+        from luther_mcp.server import tool_get_verse
         _, mock_chroma = patch_globals
         col = self._make_collection(mock_chroma)
         tool_get_verse("John", 3, 16)
@@ -318,7 +313,7 @@ class TestGetVerse:
 
 class TestListTranslations:
     def test_returns_all_three(self, patch_globals):
-        from bible_mcp_server import tool_list_translations
+        from luther_mcp.server import tool_list_translations
         _, mock_chroma = patch_globals
         col = MagicMock()
         col.count.return_value = 31102
@@ -329,7 +324,7 @@ class TestListTranslations:
         assert ids == {"GerBoLut", "KJV", "web"}
 
     def test_result_fields(self, patch_globals):
-        from bible_mcp_server import tool_list_translations
+        from luther_mcp.server import tool_list_translations
         _, mock_chroma = patch_globals
         col = MagicMock()
         col.count.return_value = 31102
@@ -343,7 +338,7 @@ class TestListTranslations:
             assert "indexed" in r
 
     def test_unavailable_collection(self, patch_globals):
-        from bible_mcp_server import tool_list_translations
+        from luther_mcp.server import tool_list_translations
         _, mock_chroma = patch_globals
         mock_chroma.get_collection.side_effect = Exception("not found")
         result = tool_list_translations()
