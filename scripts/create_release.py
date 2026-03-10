@@ -27,9 +27,13 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 
+# Allow running as a script without installing the package
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from luther_mcp import __version__
+
 OWNER = "happyherp"
 REPO = "luther-mcp"
-from luther_mcp import __version__
 VERSION = f"v{__version__}"
 ASSET_NAME = "bible_chroma_db.tar.gz"
 
