@@ -29,7 +29,8 @@ from pathlib import Path
 
 OWNER = "happyherp"
 REPO = "luther-mcp"
-VERSION = "v0.2.0"
+from luther_mcp import __version__
+VERSION = f"v{__version__}"
 ASSET_NAME = "bible_chroma_db.tar.gz"
 
 API_BASE = f"https://api.github.com/repos/{OWNER}/{REPO}"

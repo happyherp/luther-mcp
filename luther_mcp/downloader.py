@@ -5,6 +5,7 @@ Usage:
     python -m luther_mcp download [--force]
 """
 
+import json
 import os
 import shutil
 import sys
@@ -12,10 +13,27 @@ import tarfile
 import urllib.request
 from pathlib import Path
 
-RELEASE_URL = (
-    "https://github.com/happyherp/luther-mcp/releases/download/"
-    "v0.2.0/bible_chroma_db.tar.gz"
-)
+OWNER = "happyherp"
+REPO = "luther-mcp"
+ASSET_NAME = "bible_chroma_db.tar.gz"
+
+
+def get_download_url() -> str:
+    """Resolve the asset URL from the latest GitHub release."""
+    api_url = f"https://api.github.com/repos/{OWNER}/{REPO}/releases/latest"
+    req = urllib.request.Request(
+        api_url,
+        headers={"Accept": "application/vnd.github+json"},
+    )
+    with urllib.request.urlopen(req) as resp:
+        release = json.loads(resp.read())
+    for asset in release.get("assets", []):
+        if asset["name"] == ASSET_NAME:
+            return asset["browser_download_url"]
+    raise RuntimeError(
+        f"{ASSET_NAME} not found in latest release ({release.get('tag_name', '?')}). "
+        "Has the release been published? Run: python scripts/create_release.py"
+    )
 
 
 def main():
@@ -32,10 +50,17 @@ def main():
         print(f"Removing existing ChromaDB at {dest.resolve()} ...")
         shutil.rmtree(dest)
 
-    archive = dest.parent / "bible_chroma_db.tar.gz"
+    archive = dest.parent / ASSET_NAME
+
+    print("Resolving latest release ...")
+    try:
+        url = get_download_url()
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Downloading pre-built ChromaDB (~700 MB) ...")
-    print(f"Source: {RELEASE_URL}")
+    print(f"Source: {url}")
 
     def _progress(count, block_size, total_size):
         if total_size > 0:
@@ -45,7 +70,7 @@ def main():
             print(f"\r  {pct}%  ({mb_done:.0f} / {mb_total:.0f} MB)", end="", flush=True)
 
     try:
-        urllib.request.urlretrieve(RELEASE_URL, archive, reporthook=_progress)
+        urllib.request.urlretrieve(url, archive, reporthook=_progress)
     except Exception as e:
         print(f"\nDownload failed: {e}", file=sys.stderr)
         if archive.exists():
