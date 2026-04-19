@@ -50,7 +50,7 @@ _chroma_client = None
 
 def get_collection(name: str):
     try:
-        return _chroma_client.get_collection(name)
+        return _chroma_client.get_collection(name, embedding_function=None)
     except Exception as e:
         print(f"Warning: collection '{name}' unavailable: {e}", file=sys.stderr)
         return None

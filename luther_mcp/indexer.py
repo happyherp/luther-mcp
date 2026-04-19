@@ -80,6 +80,7 @@ def index_translation(
     collection = chroma_client.create_collection(
         name=collection_name,
         metadata={"hnsw:space": "cosine"},
+        embedding_function=None,
     )
 
     verses = load_verses(db_path, collection_name)
