@@ -56,4 +56,5 @@ jobs:
         env:
           BIBLE_DB_PATH: /tmp/bible_db/formats/sqlite
           CHROMA_PATH: /tmp/bible_chroma_db
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python -m luther_mcp index
