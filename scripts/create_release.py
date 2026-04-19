@@ -61,7 +61,8 @@ def github_request(url: str, method: str = "GET", data=None, token: str = "") ->
     )
     try:
         with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+            body = resp.read()
+            return json.loads(body) if body else {}
     except urllib.error.HTTPError as e:
         body = e.read().decode()
         print(f"GitHub API error {e.code}: {body}", file=sys.stderr)
@@ -115,25 +116,38 @@ def get_or_create_release(token: str) -> tuple[int, str]:
 
 
 def upload_asset(release_id: int, upload_url: str, archive: Path, token: str) -> None:
+    import http.client
+    import ssl
+    from urllib.parse import urlparse
+
     size = archive.stat().st_size
     size_mb = size / 1_048_576
     print(f"Uploading {archive.name} ({size_mb:.0f} MB) ...")
     print("  This may take several minutes depending on your connection.")
 
-    url = f"{upload_url}?name={ASSET_NAME}"
-    req = urllib.request.Request(
-        url,
-        data=archive.read_bytes(),
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/octet-stream",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+    # Stream the file rather than loading it all into memory — a 300+ MB body
+    # sent via urllib.read_bytes() causes an SSL EOF on GitHub's side.
+    parsed = urlparse(f"{upload_url}?name={ASSET_NAME}")
+    conn = http.client.HTTPSConnection(
+        parsed.netloc,
+        context=ssl.create_default_context(),
+        timeout=600,
     )
-    with urllib.request.urlopen(req) as resp:
-        asset = json.loads(resp.read())
+    with open(archive, "rb") as f:
+        conn.request(
+            "POST",
+            parsed.path + "?" + parsed.query,
+            body=f,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/octet-stream",
+                "Content-Length": str(size),
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        response = conn.getresponse()
+        asset = json.loads(response.read())
     print(f"Upload complete: {asset['browser_download_url']}")
 
 
@@ -161,7 +175,14 @@ def main():
     # Step 2: create release
     release_id, upload_url = get_or_create_release(token)
 
-    # Step 3: upload
+    # Step 3: delete any existing asset (e.g. from a failed previous upload)
+    assets = github_request(f"{API_BASE}/releases/{release_id}/assets", token=token)
+    for asset in assets:
+        if asset["name"] == ASSET_NAME:
+            print(f"Deleting existing asset (id={asset['id']}) before re-upload ...")
+            github_request(f"{API_BASE}/releases/assets/{asset['id']}", method="DELETE", token=token)
+
+    # Step 4: upload
     upload_asset(release_id, upload_url, ARCHIVE_PATH, token)
 
     # Clean up archive
