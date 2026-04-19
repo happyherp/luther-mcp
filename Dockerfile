@@ -17,7 +17,7 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 RUN git clone --depth 1 --filter=blob:none --sparse \
         https://github.com/scrollmapper/bible_databases /tmp/bible_db && \
     cd /tmp/bible_db && \
-    git sparse-checkout set \
+    git sparse-checkout set --no-cone \
         "formats/sqlite/GerBoLut.db" \
         "formats/sqlite/KJV.db" \
         "formats/sqlite/NHEB.db" && \

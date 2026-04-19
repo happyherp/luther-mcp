@@ -63,6 +63,7 @@ def index_translation(
     chroma_client: chromadb.PersistentClient,
     model: SentenceTransformer,
     force: bool,
+    limit: int | None = None,
 ) -> None:
     existing = [c.name for c in chroma_client.list_collections()]
     if collection_name in existing:
@@ -84,6 +85,8 @@ def index_translation(
     )
 
     verses = load_verses(db_path, collection_name)
+    if limit is not None:
+        verses = verses[:limit]
     total = len(verses)
     print(f"[{collection_name}] {total} verses loaded. Starting embedding...")
 
@@ -129,6 +132,12 @@ def index_translation(
 def main():
     parser = argparse.ArgumentParser(description="Index Bible translations into ChromaDB.")
     parser.add_argument("--force", action="store_true", help="Re-index even if collection already exists.")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap verses per translation (for CI smoke tests). Omit for full index.",
+    )
     args = parser.parse_args()
 
     # Default: ../bible_databases/formats/sqlite relative to the package root
@@ -158,6 +167,7 @@ def main():
             chroma_client=chroma_client,
             model=model,
             force=args.force,
+            limit=args.limit,
         )
 
     print("\nAll done. ChromaDB is at:", chroma_dir.resolve())

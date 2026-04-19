@@ -221,7 +221,7 @@ class TestSearchBible:
             "KJV": make_col("KJV", 0.1),
             "web": make_col("web", 0.3),
         }
-        mock_chroma.get_collection.side_effect = lambda name: cols[name]
+        mock_chroma.get_collection.side_effect = lambda name, **_: cols[name]
 
         results = tool_search_bible("love", translation="all", n_results=10)
         assert len(results) == 1
@@ -289,7 +289,7 @@ class TestGetVerse:
             return col
 
         cols = {t: make_col(t) for t in ["GerBoLut", "KJV", "web"]}
-        mock_chroma.get_collection.side_effect = lambda name: cols[name]
+        mock_chroma.get_collection.side_effect = lambda name, **_: cols[name]
 
         result = tool_get_verse("John", 3, 16, translation="all")
         assert isinstance(result, list)
