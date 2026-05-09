@@ -20,12 +20,15 @@ Cross-lingual search works out of the box: query in English to find German verse
 
 ## Quickstart — hosted, no install needed
 
+### Claude Desktop
+
 Add to `claude_desktop_config.json` (`%APPDATA%\Claude\claude_desktop_config.json`):
 
 ```json
 {
   "mcpServers": {
     "Luther Bible": {
+      "type": "sse", 
       "url": "https://aifreund-luther-bible.hf.space/sse"
     }
   }
@@ -33,6 +36,17 @@ Add to `claude_desktop_config.json` (`%APPDATA%\Claude\claude_desktop_config.jso
 ```
 
 Restart Claude Desktop. Done. No API key, no local install.
+
+### Claude Code 
+
+In your shell run
+
+```bash
+claude mcp add -s user -t sse luther-mcp https://aifreund-luther-bible.hf.space/sse
+```
+
+to add it to your `.claude.json`.
+
 
 > **Note:** The free HuggingFace tier may sleep after ~48h of inactivity. First request after wake takes ~15s; subsequent requests are ~50ms.
 
