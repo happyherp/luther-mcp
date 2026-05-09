@@ -22,7 +22,8 @@ Add to `claude_desktop_config.json`:
 {
   "mcpServers": {
     "Luther Bible": {
-      "url": "https://happyherp-luther-bible.hf.space/sse"
+      "type": "sse",
+      "url": "https://aifreund-luther-bible.hf.space/sse"
     }
   }
 }
