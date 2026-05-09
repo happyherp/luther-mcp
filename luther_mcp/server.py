@@ -336,7 +336,12 @@ async def main_sse(port: int = 7860):
             await server.run(streams[0], streams[1], server.create_initialization_options())
         return Response()
 
+    async def handle_health(request):
+        from starlette.responses import JSONResponse
+        return JSONResponse({"status": "ok", "service": "luther-bible-mcp"})
+
     app = Starlette(routes=[
+        Route("/", handle_health, methods=["GET"]),
         Route("/sse", handle_sse, methods=["GET"]),
         Mount("/messages/", app=sse.handle_post_message),
     ])
