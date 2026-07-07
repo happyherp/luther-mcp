@@ -137,6 +137,48 @@ Returns available translations with language, description, and verse count.
 
 ---
 
+## REST endpoint (no MCP required)
+
+For plain HTTP clients that don't want to speak MCP-over-SSE, the SSE server
+also exposes semantic search as a simple `GET /search` endpoint. It wraps the
+same `search_bible` logic and returns JSON directly — no handshake, no session.
+
+```
+GET /search?query=<text>&translation=GerBoLut&n_results=10&testament=NT
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `query` | string | required | Query in any language |
+| `translation` | string | `"GerBoLut"` | `"GerBoLut"` / `"KJV"` / `"web"` / `"all"` |
+| `n_results` | integer | `10` | Results to return (clamped to 1–50) |
+| `testament` | string | — | `"OT"` or `"NT"` to filter |
+
+Example (hosted Space):
+
+```bash
+curl "https://aifreund-luther-bible.hf.space/search?query=the%20Lord%20is%20my%20shepherd&translation=all&n_results=3"
+```
+
+Response:
+
+```json
+{
+  "query": "the Lord is my shepherd",
+  "translation": "all",
+  "count": 3,
+  "results": [
+    { "reference": "Psalmen 23:1", "reference_en": "Psalms 23:1", "text": "...", "translation": "web", "score": 0.8827 }
+  ]
+}
+```
+
+Bad input returns a 4xx with an `{"error": "..."}` body. The endpoint is only
+served in SSE mode (`python -m luther_mcp --sse`, or when `PORT` is set, as on
+HuggingFace Spaces); it is not part of the stdio transport.
+
+---
+
 ## Example queries
 
 - `"Gottes Liebe zur Welt"` → 1. Johannes 4:9, Johannes 3:16, ...

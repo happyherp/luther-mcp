@@ -161,6 +161,66 @@ def tool_get_verse(
     return results
 
 
+MAX_N_RESULTS = 50
+_VALID_TRANSLATIONS = set(ALL_TRANSLATIONS) | {"all"}
+
+
+async def handle_search(request):
+    """REST wrapper around ``tool_search_bible``.
+
+    ``GET /search?query=...&translation=GerBoLut&n_results=10&testament=NT``
+
+    Returns ``{query, translation, count, results: [...]}`` where each result
+    has the same shape as the ``search_bible`` MCP tool. Provided so plain HTTP
+    clients (e.g. an edge Worker) can use semantic search without an MCP/SSE
+    handshake. Errors return an ``{"error": ...}`` body with a 4xx status.
+    """
+    from starlette.responses import JSONResponse
+
+    params = request.query_params
+
+    query = (params.get("query") or "").strip()
+    if not query:
+        return JSONResponse({"error": "Missing required 'query' parameter."}, status_code=400)
+
+    translation = params.get("translation", "GerBoLut")
+    if translation not in _VALID_TRANSLATIONS:
+        valid = ", ".join(sorted(_VALID_TRANSLATIONS))
+        return JSONResponse(
+            {"error": f"Unknown translation '{translation}'. Valid values: {valid}."},
+            status_code=400,
+        )
+
+    raw_n = params.get("n_results", "10")
+    try:
+        n_results = int(raw_n)
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "'n_results' must be an integer."}, status_code=400)
+    n_results = max(1, min(MAX_N_RESULTS, n_results))
+
+    testament = params.get("testament")
+    if testament is not None and testament not in ("OT", "NT"):
+        return JSONResponse(
+            {"error": "'testament' must be 'OT' or 'NT' when provided."},
+            status_code=400,
+        )
+
+    results = tool_search_bible(
+        query=query,
+        translation=translation,
+        n_results=n_results,
+        testament=testament,
+    )
+    return JSONResponse(
+        {
+            "query": query,
+            "translation": translation,
+            "count": len(results),
+            "results": results,
+        }
+    )
+
+
 def tool_list_translations() -> list[dict]:
     output = []
     for tname, meta in TRANSLATION_META.items():
@@ -342,6 +402,7 @@ async def main_sse(port: int = 7860):
 
     app = Starlette(routes=[
         Route("/", handle_health, methods=["GET"]),
+        Route("/search", handle_search, methods=["GET"]),
         Route("/sse", handle_sse, methods=["GET"]),
         Mount("/messages/", app=sse.handle_post_message),
     ])
